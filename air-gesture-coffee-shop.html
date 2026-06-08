@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Gesture Coffee Shop</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --accent-color: #ff9f43;
+            --neon-glow: 0 0 10px #ff9f43, 0 0 20px #ff9f43;
+            --text-color: #ffffff;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        h1 {
+            margin: 10px 0 5px 0;
+            color: var(--accent-color);
+            text-shadow: var(--neon-glow);
+            font-size: 24px;
+        }
+
+        #status {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        /* App Container */
+        #app-container {
+            position: relative;
+            width: 1024px;
+            height: 650px;
+            background: var(--card-bg);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7), inset 0 0 15px rgba(255,159,67,0.2);
+            border: 1px solid rgba(255,159,67,0.3);
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Hidden raw webcam feed */
+        #webcam {
+            display: none;
+        }
+
+        /* Main Interaction Canvas */
+        #main-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1024px;
+            height: 650px;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* DOM UI overlay Layout */
+        #ui-layer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 260px 1fr 260px;
+            padding: 20px;
+            box-sizing: border-box;
+            gap: 20px;
+        }
+
+        .menu-column {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .menu-category {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .category-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--accent-color);
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(255,159,67,0.3);
+            padding-bottom: 3px;
+        }
+
+        /* Menu Items Grid */
+        .grid-items {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .menu-item {
+            background: rgba(255,255,255,0.05);
+            border: 2px solid transparent;
+            border-radius: 8px;
+            padding: 8px;
+            text-align: center;
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .item-icon {
+            width: 35px;
+            height: 35px;
+            margin-bottom: 5px;
+            fill: #aaa;
+        }
+
+        /* Center workspace for assembling the drink */
+        #center-build-area {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            border: 2px dashed rgba(255,159,67,0.3);
+            border-radius: 15px;
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #recipe-display {
+            text-align: center;
+            width: 100%;
+        }
+
+        #cup-dropzone {
+            width: 180px;
+            height: 180px;
+            border: 3px dashed rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: auto;
+            position: relative;
+            background: rgba(255,255,255,0.02);
+        }
+
+        #action-buttons {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            padding: 12px 15px;
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 25px;
+            border: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            flex: 1;
+            max-width: 110px;
+            text-align: center;
+        }
+
+        .btn-order {
+            background: #2ecc71;
+            color: white;
+            box-shadow: 0 0 10px rgba(46,204,113,0.5);
+        }
+
+        .btn-reset {
+            background: #f39c12;
+            color: white;
+            box-shadow: 0 0 10px rgba(243,156,18,0.5);
+        }
+
+        .btn-cancel {
+            background: #e74c3c;
+            color: white;
+            box-shadow: 0 0 10px rgba(231,76,60,0.5);
+        }
+
+        /* Hover simulation styles */
+        .menu-item.hovered, .btn.hovered {
+            border-color: var(--accent-color);
+            background: rgba(255,159,67,0.2);
+            transform: scale(1.05);
+        }
+        
+        .btn-order.hovered { border-color: #fff; background: #27ae60; }
+        .btn-reset.hovered { border-color: #fff; background: #e67e22; }
+        .btn-cancel.hovered { border-color: #fff; background: #c0392b; }
+
+        .item-price {
+            font-size: 11px;
+            color: #ff9f43;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+
+        /* Order History Panel */
+        #order-history-panel {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 460px;
+            background: rgba(0,0,0,0.7);
+            border: 1px solid rgba(255,159,67,0.25);
+            border-radius: 10px;
+            padding: 8px 14px;
+            z-index: 3;
+            max-height: 90px;
+            overflow-y: auto;
+        }
+        #order-history-panel h4 {
+            margin: 0 0 4px 0;
+            font-size: 11px;
+            color: #ff9f43;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .history-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #bbb;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding: 2px 0;
+        }
+        .history-row span.total { color: #2ecc71; font-weight: bold; }
+
+        /* Improved receipt popup */
+        #receipt-popup {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1a1a2e;
+            border: 2px solid var(--accent-color);
+            padding: 22px 26px;
+            border-radius: 15px;
+            z-index: 10;
+            text-align: center;
+            display: none;
+            box-shadow: 0 0 40px rgba(255,159,67,0.3);
+            width: 340px;
+        }
+        .receipt-line {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            padding: 3px 0;
+            border-bottom: 1px dashed rgba(255,255,255,0.08);
+            color: #ccc;
+        }
+        .receipt-line.total-line {
+            border-top: 1px solid var(--accent-color);
+            border-bottom: none;
+            margin-top: 6px;
+            padding-top: 8px;
+            color: #fff;
+            font-weight: bold;
+            font-size: 15px;
+        }
+        .order-number {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .order-time {
+            font-size: 11px;
+            color: #666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>☕ AIR-GESTURE SMART MENU ☕</h1>
+    <div id="status">Starting Webcam & AI Tracking... Please allow camera access.</div>
+
+    <div id="app-container">
+        <video id="webcam" autoplay playsinline></video>
+        
+        <canvas id="main-canvas" width="1024" height="650"></canvas>
+
+        <div id="ui-layer">
+            
+            <div class="menu-column">
+                <div class="menu-category">
+                    <div class="category-title">1. Choose Cup</div>
+                    <div class="grid-items">
+                        <div class="menu-item" id="item-tea-cup" data-name="Tea Cup" data-type="cup" data-price="20">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M2 21h18v-2H2v2M20 8h-2V5h2v3M4 19h12v-4H4v4m0-6h12V5H4v8m16-5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-4v5h4z"/></svg>
+                            Tea Cup<div class="item-price">₹20</div>
+                        </div>
+                        <div class="menu-item" id="item-coffee-cup" data-name="Coffee Cup" data-type="cup" data-price="30">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M4 19h16v2H4v-2m14-9h-2V5h2v5m-4 4H4V5h10v9m4-9c1.1 0 2 .9 2 2v2c0 1.1-.9 2-2 2h-2V5h2z"/></svg>
+                            Coffee Cup<div class="item-price">₹30</div>
+                        </div>
+                        <div class="menu-item" id="item-cold-coffee-cup" data-name="Cold Cup" data-type="cup" data-price="35">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-9 15H6v-2h4v2m0-4H6v-2h4v2m0-4H6V8h4v2m5 8h-3V8h3v10z"/></svg>
+                            Cold Cup<div class="item-price">₹35</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="menu-category">
+                    <div class="category-title">2. Water Base</div>
+                    <div class="grid-items">
+                        <div class="menu-item" id="item-sparkle-water" data-name="Sparkle Water" data-type="water" data-price="10">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M12 2.69L5.69 9H18.3L12 2.69M12 22.31L18.31 16H5.69L12 22.31Z"/></svg>
+                            Sparkling<div class="item-price">₹10</div>
+                        </div>
+                        <div class="menu-item" id="item-normal-water" data-name="Normal Water" data-type="water" data-price="5">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M12 2.1C12 2.1 6 8.5 6 13C6 16.3 8.7 19 12 19C15.3 19 18 16.3 18 13C18 8.5 12 2.1 12 2.1Z"/></svg>
+                            Normal H2O<div class="item-price">₹5</div>
+                        </div>
+                        <div class="menu-item" id="item-hot-water" data-name="Hot Water" data-type="water" data-price="5">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-3.14-2.56-5.7-5.7-5.7-1.74 0-3.29.78-4.32 2.01C8.74 8.11 8.15 8 7.54 8c-2.48 0-4.5 2.02-4.5 4.5 0 .33.04.66.11.97C2.08 13.9 1.5 14.88 1.5 16c0 1.66 1.34 3 3 3h14.5c1.66 0 3-1.34 3-3 0-1.35-.77-2.52-1.86-3.06z"/></svg>
+                            Hot Water<div class="item-price">₹5</div>
+                        </div>
+                        <div class="menu-item" id="item-cold-water" data-name="Cold Water" data-type="water" data-price="8">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>
+                            Cold Water<div class="item-price">₹8</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="center-build-area">
+                <div id="recipe-display">
+                    <h3 style="margin:5px 0; color:#ff9f43;">Your Creation</h3>
+                    <div id="current-recipe" style="font-size: 13px; color: #aaa; min-height: 40px;">
+                        Empty Mix... Add a base cup first!
+                    </div>
+                </div>
+
+                <div id="cup-dropzone">
+                    <span id="dropzone-text" style="color: #666; font-size:14px; text-align:center; padding:10px;">Drag Elements or Hover Here</span>
+                </div>
+
+                <div id="action-buttons">
+                    <button class="btn btn-reset" id="btn-reset">Reset</button>
+                    <button class="btn btn-cancel" id="btn-cancel">Cancel</button>
+                    <button class="btn btn-order" id="btn-order">Order</button>
+                </div>
+            </div>
+
+            <div class="menu-column">
+                <div class="menu-category">
+                    <div class="category-title">3. Additives</div>
+                    <div class="grid-items">
+                        <div class="menu-item" id="item-milk" data-name="Milk" data-type="milk" data-price="10">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M9 22c-2.76 0-5-2.24-5-5 0-2.64 2.05-4.78 4.65-4.96C9.28 10.15 10.53 8.5 12.25 8.5c1.93 0 3.5 1.57 3.5 3.5 0 .22-.02.43-.06.64C18.12 12.9 20 14.73 20 17c0 2.76-2.24 5-5 5H9z"/></svg>
+                            Fresh Milk<div class="item-price">₹10</div>
+                        </div>
+                        <div class="menu-item" id="item-cold-coffee" data-name="Cold Coffee Liquid" data-type="milk" data-price="15">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M2 2h20v2H2V2m3 5h14l-2 14H7L5 7m5 3v8h2v-8h-2z"/></svg>
+                            Cold Brew Base<div class="item-price">₹15</div>
+                        </div>
+                        <div class="menu-item" id="item-ice-cubes" data-name="Ice Cubes" data-type="milk" data-price="5">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-8 14H7v-4h4v4m0-6H7V7h4v4m6 6h-4v-4h4v4m0-6h-4V7h4v4z"/></svg>
+                            Ice Cubes<div class="item-price">₹5</div>
+                        </div>
+                        <div class="menu-item" id="item-sugar" data-name="Sugar" data-type="milk" data-price="3">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M12 2c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l2.79-2.79C10.09 18.66 11.02 19 12 19c4.97 0 9-4.03 9-9s-4.03-9-9-3zm0 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/></svg>
+                            Sugar<div class="item-price">₹3</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="menu-category">
+                    <div class="category-title">4. Powders</div>
+                    <div class="grid-items">
+                        <div class="menu-item" id="item-coffee-powder" data-name="Coffee Powder" data-type="powder" data-price="12">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12A10 10 0 0 0 12 22A10 10 0 0 0 22 12A10 10 0 0 0 12 2M12 4A6 6 0 0 1 18 10A6 6 0 0 1 12 16A6 6 0 0 1 6 10A6 6 0 0 1 12 4Z"/></svg>
+                            Coffee Powder<div class="item-price">₹12</div>
+                        </div>
+                        <div class="menu-item" id="item-milk-powder" data-name="Milk Powder" data-type="powder" data-price="8">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-3zm0 14.5c-3.04 0-5.5-2.46-5.5-5.5S8.96 6.5 12 6.5s5.5 2.46 5.5 5.5-2.46 5.5-5.5 5.5z"/></svg>
+                            Milk Powder<div class="item-price">₹8</div>
+                        </div>
+                        <div class="menu-item" id="item-tea-powder" data-name="Tea Powder" data-type="powder" data-price="8">
+                            <svg class="item-icon" viewBox="0 0 24 24"><path d="M2 12C2 6.48 6.48 2 12 2S22 6.48 22 12H2Z"/></svg>
+                            Tea Powder<div class="item-price">₹8</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div id="receipt-popup">
+            <div class="order-number" id="receipt-order-num">Order #001</div>
+            <h2 style="margin:0 0 10px 0; color:#2ecc71;">✅ Order Placed!</h2>
+            <div id="receipt-details" style="text-align:left; margin:10px 0;"></div>
+            <div class="order-time" id="receipt-time"></div>
+            <p style="color:var(--accent-color); font-size:11px; margin-top:10px;">Hover away or Reset to build another</p>
+        </div>
+
+        <!-- Order History Panel -->
+        <div id="order-history-panel">
+            <h4>📋 Order History</h4>
+            <div id="history-list"><span style="color:#555; font-size:11px;">No orders yet...</span></div>
+        </div>
+
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('main-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const statusDiv = document.getElementById('status');
+
+        // State Machine Tracking Variables
+        let currentRecipe = { cup: null, water: null, milk: [], powder: [] };
+        let activeHoverElement = null;
+        let hoverStartTime = 0;
+        
+        // Drag and Drop State
+        let draggedElement = null;
+        let isDragging = false;
+
+        // Order tracking
+        let orderCount = 0;
+        let orderHistory = [];
+
+        // Dwell click threshold timing (1.2 seconds)
+        const DWELL_TIME = 1200; 
+
+        // Scan DOM layouts to calculate explicit screen targets
+        let activeHitboxes = [];
+
+        function recalculateHitboxes() {
+            activeHitboxes = [];
+            document.querySelectorAll('.menu-item, .btn, #cup-dropzone').forEach(el => {
+                const rect = el.getBoundingClientRect();
+                const containerRect = document.getElementById('app-container').getBoundingClientRect();
+                
+                activeHitboxes.push({
+                    id: el.id,
+                    element: el,
+                    type: el.getAttribute('data-type') || 'action',
+                    name: el.getAttribute('data-name') || el.innerText.trim(),
+                    xMin: rect.left - containerRect.left,
+                    xMax: rect.right - containerRect.left,
+                    yMin: rect.top - containerRect.top,
+                    yMax: rect.bottom - containerRect.top
+                });
+            });
+        }
+
+        // Window resize binding
+        window.addEventListener('resize', recalculateHitboxes);
+
+        // Core UI Update logic
+        function updateRecipeUI() {
+            const display = document.getElementById('current-recipe');
+            const zoneText = document.getElementById('dropzone-text');
+            
+            if(!currentRecipe.cup && !currentRecipe.water && !currentRecipe.milk.length && !currentRecipe.powder.length) {
+                display.innerHTML = "Empty Mix... Add a base cup first!";
+                zoneText.innerHTML = "Drag Elements<br>or Hover Here";
+                return;
+            }
+
+            let html = ``;
+            if(currentRecipe.cup) html += `<strong>Vessel:</strong> ${currentRecipe.cup}<br>`;
+            if(currentRecipe.water) html += `<strong>Base:</strong> ${currentRecipe.water}<br>`;
+            if(currentRecipe.milk.length) html += `<strong>Mixins:</strong> ${currentRecipe.milk.join(', ')}<br>`;
+            if(currentRecipe.powder.length) html += `<strong>Powders:</strong> ${currentRecipe.powder.join(', ')}<br>`;
+            
+            display.innerHTML = html;
+            zoneText.innerHTML = `<span style="color:#ff9f43; font-weight:bold;">${currentRecipe.cup || 'Ingredients Adding...'}</span>`;
+        }
+
+        function getItemPrice(id) {
+            const el = document.getElementById(id);
+            return el ? parseInt(el.getAttribute('data-price') || 0) : 0;
+        }
+
+        function calcTotal() {
+            let total = 0;
+            if (currentRecipe.cup) {
+                const el = document.querySelector(`[data-name="${currentRecipe.cup}"]`);
+                if (el) total += parseInt(el.getAttribute('data-price') || 0);
+            }
+            if (currentRecipe.water) {
+                const el = document.querySelector(`[data-name="${currentRecipe.water}"]`);
+                if (el) total += parseInt(el.getAttribute('data-price') || 0);
+            }
+            [...currentRecipe.milk, ...currentRecipe.powder].forEach(name => {
+                const el = document.querySelector(`[data-name="${name}"]`);
+                if (el) total += parseInt(el.getAttribute('data-price') || 0);
+            });
+            return total;
+        }
+
+        function updateOrderHistory(orderNum, drink, total, time) {
+            orderHistory.unshift({ orderNum, drink, total, time });
+            const histList = document.getElementById('history-list');
+            histList.innerHTML = orderHistory.slice(0, 5).map(o =>
+                `<div class="history-row">
+                    <span>#${String(o.orderNum).padStart(3,'0')} &nbsp; ${o.drink}</span>
+                    <span>${o.time} &nbsp; <span class="total">₹${o.total}</span></span>
+                </div>`
+            ).join('');
+        }
+
+        function triggerAction(hitbox) {
+            if (hitbox.id === 'btn-reset') {
+                currentRecipe = { cup: null, water: null, milk: [], powder: [] };
+                document.getElementById('receipt-popup').style.display = 'none';
+                document.getElementById('receipt-details').innerHTML = '';
+                updateRecipeUI();
+                statusDiv.innerText = "Recipe Reset! Build a new drink.";
+            } else if (hitbox.id === 'btn-cancel') {
+                currentRecipe = { cup: null, water: null, milk: [], powder: [] };
+                document.getElementById('receipt-popup').style.display = 'none';
+                document.getElementById('receipt-details').innerHTML = '';
+                updateRecipeUI();
+                statusDiv.innerText = "Order Canceled successfully.";
+            } else if (hitbox.id === 'btn-order') {
+                if(!currentRecipe.cup) {
+                    statusDiv.innerText = "Error: Select a Cup type first before ordering!";
+                    return;
+                }
+
+                orderCount++;
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                const total = calcTotal();
+
+                const popup = document.getElementById('receipt-popup');
+                const details = document.getElementById('receipt-details');
+
+                // Build itemised bill lines
+                const lines = [];
+                const addLine = (name, dataName) => {
+                    const el = document.querySelector(`[data-name="${dataName}"]`);
+                    const price = el ? parseInt(el.getAttribute('data-price') || 0) : 0;
+                    lines.push(`<div class="receipt-line"><span>${name}</span><span>₹${price}</span></div>`);
+                };
+
+                if (currentRecipe.cup) addLine(`Vessel: ${currentRecipe.cup}`, currentRecipe.cup);
+                if (currentRecipe.water) addLine(`Base: ${currentRecipe.water}`, currentRecipe.water);
+                currentRecipe.milk.forEach(m => addLine(`Additive: ${m}`, m));
+                currentRecipe.powder.forEach(p => addLine(`Powder: ${p}`, p));
+                lines.push(`<div class="receipt-line total-line"><span>TOTAL</span><span>₹${total}</span></div>`);
+
+                details.innerHTML = lines.join('');
+                document.getElementById('receipt-order-num').innerText = `Order #${String(orderCount).padStart(3,'0')} · ${timeStr}`;
+                document.getElementById('receipt-time').innerText = `${now.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}`;
+                popup.style.display = 'block';
+
+                // Save to history
+                const drinkName = currentRecipe.cup + (currentRecipe.water ? ` + ${currentRecipe.water}` : '');
+                updateOrderHistory(orderCount, drinkName, total, timeStr);
+
+                statusDiv.innerText = `Order #${String(orderCount).padStart(3,'0')} placed! Total: ₹${total}`;
+            } else if (hitbox.id === 'cup-dropzone') {
+                if(draggedElement) {
+                    executeItemIntegration(draggedElement);
+                    draggedElement = null;
+                    isDragging = false;
+                }
+            } else {
+                executeItemIntegration(hitbox);
+            }
+        }
+
+        function executeItemIntegration(item) {
+            if(item.type === 'cup') {
+                currentRecipe.cup = item.name;
+            } else if (item.type === 'water') {
+                currentRecipe.water = item.name;
+            } else if (item.type === 'milk') {
+                if(!currentRecipe.milk.includes(item.name)) currentRecipe.milk.push(item.name);
+            } else if (item.type === 'powder') {
+                if(!currentRecipe.powder.includes(item.name)) currentRecipe.powder.push(item.name);
+            }
+            updateRecipeUI();
+            statusDiv.innerText = `Added ${item.name} to recipe!`;
+            recalculateHitboxes();
+        }
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            canvasCtx.globalAlpha = 0.15; 
+            canvasCtx.translate(canvasElement.width, 0);
+            canvasCtx.scale(-1, 1);
+            if (results.image) {
+                canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            }
+            canvasCtx.restore();
+
+            if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+                statusDiv.innerText = "No hand detected. Raise your hand inside camera vision.";
+                document.querySelectorAll('.hovered').forEach(el => el.classList.remove('hovered'));
+                activeHoverElement = null;
+                return;
+            }
+
+            statusDiv.innerText = "System online. Track via index finger point.";
+
+            const landmarks = results.multiHandLandmarks[0];
+            const indexFingerTip = landmarks[8];
+            const thumbTip = landmarks[4];
+            
+            const fingerX = (1 - indexFingerTip.x) * canvasElement.width;
+            const fingerY = indexFingerTip.y * canvasElement.height;
+
+            const thumbX = (1 - thumbTip.x) * canvasElement.width;
+            const thumbY = thumbTip.y * canvasElement.height;
+
+            const distance = Math.hypot(fingerX - thumbX, fingerY - thumbY);
+            const isPinching = distance < 35;
+
+            let currentHit = null;
+
+            for (let box of activeHitboxes) {
+                if (fingerX >= box.xMin && fingerX <= box.xMax && fingerY >= box.yMin && fingerY <= box.yMax) {
+                    currentHit = box;
+                    break;
+                }
+            }
+
+            if (currentHit) {
+                if (activeHoverElement !== currentHit.id) {
+                    document.querySelectorAll('.hovered').forEach(el => el.classList.remove('hovered'));
+                    activeHoverElement = currentHit.id;
+                    hoverStartTime = Date.now();
+                    currentHit.element.classList.add('hovered');
+                } else {
+                    const elapsed = Date.now() - hoverStartTime;
+                    const percentComplete = Math.min(elapsed / DWELL_TIME, 1);
+
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(fingerX, fingerY, 22, 0, 2 * Math.PI);
+                    canvasCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+                    canvasCtx.lineWidth = 4;
+                    canvasCtx.stroke();
+
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(fingerX, fingerY, 22, -Math.PI / 2, (-Math.PI / 2) + (2 * Math.PI * percentComplete));
+                    canvasCtx.strokeStyle = '#ff9f43';
+                    canvasCtx.lineWidth = 5;
+                    canvasCtx.stroke();
+
+                    if (elapsed >= DWELL_TIME && !isDragging) {
+                        triggerAction(currentHit);
+                        hoverStartTime = Date.now(); 
+                    }
+                }
+
+                if (isPinching && !isDragging && currentHit.type !== 'action') {
+                    isDragging = true;
+                    draggedElement = currentHit;
+                }
+            } else {
+                if (!isDragging) {
+                    document.querySelectorAll('.hovered').forEach(el => el.classList.remove('hovered'));
+                    activeHoverElement = null;
+                }
+            }
+
+            if (isDragging && draggedElement) {
+                canvasCtx.beginPath();
+                canvasCtx.arc(fingerX, fingerY, 15, 0, 2 * Math.PI);
+                canvasCtx.fillStyle = '#ff9f43';
+                canvasCtx.fill();
+
+                if (!isPinching) {
+                    const dropzone = activeHitboxes.find(b => b.id === 'cup-dropzone');
+                    if (dropzone && fingerX >= dropzone.xMin && fingerX <= dropzone.xMax && fingerY >= dropzone.yMin && fingerY <= dropzone.yMax) {
+                        triggerAction(dropzone);
+                    }
+                    isDragging = false;
+                    draggedElement = null;
+                    document.querySelectorAll('.hovered').forEach(el => el.classList.remove('hovered'));
+                    activeHoverElement = null;
+                }
+            } else {
+                canvasCtx.beginPath();
+                canvasCtx.arc(fingerX, fingerY, 8, 0, 2 * Math.PI);
+                canvasCtx.fillStyle = isPinching ? '#2ecc71' : '#ff9f43';
+                canvasCtx.fill();
+                canvasCtx.strokeStyle = '#ffffff';
+                canvasCtx.lineWidth = 2;
+                canvasCtx.stroke();
+            }
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 1024,
+            height: 650
+        });
+
+        camera.start().then(() => {
+            statusDiv.innerText = "Webcam mounted. Running initial interface geometry scan...";
+            setTimeout(() => {
+                recalculateHitboxes();
+                statusDiv.innerText = "System fully configured. Raise hand to track.";
+            }, 1000);
+        }).catch(err => {
+            statusDiv.innerText = "System error: Unable to start camera feed. Check permissions.";
+            console.error(err);
+        });
+    </script>
+</body>
+</html>
